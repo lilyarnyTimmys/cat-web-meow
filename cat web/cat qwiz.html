@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Which Cat Are You? Quiz</title>
+  <style>
+    :root {
+      --bg: #0f0f14;
+      --panel: #171822;
+      --text: #e9ecf1;
+      --muted: #a7b0c3;
+      --accent: #8b5cf6; /* violet */
+      --accent-2: #22d3ee; /* cyan */
+      --ok: #34d399; /* green */
+      --warn: #f59e0b; /* amber */
+      --err: #ef4444;  /* red */
+    }
+    html, body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; }
+    .wrap { max-width: 820px; margin: 32px auto; padding: 0 16px 64px; }
+    h1 { font-size: clamp(28px, 4vw, 40px); line-height:1.1; margin: 8px 0 12px; }
+    p.lead { color: var(--muted); margin: 0 0 24px; }
+    .card { background: linear-gradient(180deg, rgba(255,255,255,0.04), transparent 40%), var(--panel); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 18px 18px; }
+    fieldset { border: none; margin: 0 0 18px; padding: 0; }
+    legend { font-weight: 700; margin-bottom: 10px; }
+    .options { display: grid; gap: 10px; }
+    .opt {
+      display: flex; align-items: center; gap: 10px;
+      border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px 12px;
+      background: rgba(255,255,255,0.02); cursor: pointer;
+      transition: border-color .15s ease, background .15s ease, transform .05s ease;
+    }
+    .opt:hover { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.04); }
+    .opt input { accent-color: var(--accent); transform: scale(1.15); }
+    .controls { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+    button {
+      appearance: none; border: none; background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: white; font-weight: 700; padding: 12px 16px; border-radius: 12px; cursor: pointer;
+      box-shadow: 0 8px 24px rgba(139,92,246,0.25);
+    }
+    button.secondary {
+      background: transparent; border: 1px solid rgba(255,255,255,0.16); color: var(--text);
+    }
+    .hint { color: var(--warn); margin-top: 10px; display: none; }
+    .scores { margin-top: 10px; color: var(--muted); font-size: 14px; }
+    .result { margin-top: 18px; display: none; }
+    .badge { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius: 999px; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); }
+    .grid { display: grid; gap: 14px; }
+    @media (min-width: 720px) { .grid { grid-template-columns: 1.1fr 1fr; } }
+    .result-card { padding: 14px; border-radius: 14px; border:1px solid rgba(255,255,255,0.12); background: rgba(34,211,238,0.06); }
+    .bar { height: 8px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden; }
+    .bar > span { display:block; height:100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); width: 0%; transition: width .3s ease; }
+    .tiny { font-size: 13px; color: var(--muted); }
+    .cat-name { font-weight: 800; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Which Cat Are You? 🐾</h1>
+    <p class="lead">Answer a few questions. Each choice adds points to a cat type. The highest score wins (ties handled smartly).</p>
+
+    <div class="card grid">
+      <form id="quizForm" aria-describedby="quizHelp">
+        <div id="questions"></div>
+        <div class="controls">
+          <button type="submit">See my cat</button>
+          <button type="button" class="secondary" id="resetBtn">Reset</button>
+        </div>
+        <div id="hint" role="alert" class="hint">Please answer every question.</div>
+      </form>
+
+      <div>
+        <div id="result" class="result">
+          <div class="result-card">
+            <div class="badge" id="resultBadge">🎉 Your cat match</div>
+            <h2 id="resultTitle" style="margin:10px 0 6px;"></h2>
+            <p id="resultDesc" style="margin:0 0 10px;"></p>
+            <div class="bar"><span id="resultBar"></span></div>
+            <div class="tiny" id="tieNote"></div>
+          </div>
+          <div class="scores" id="scoreBreakdown"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 1) Define cat types (edit names, emojis, descriptions)
+    const CATS = {
+      nap:     { name: "The Nap Master", emoji: "😴", desc: "Cozy, calm, and a connoisseur of sunbeams." },
+      explorer:{ name: "The Explorer",   emoji: "🧭", desc: "Curious, bold, and always sniffing out new corners." },
+      diva:    { name: "The Diva",       emoji: "👑", desc: "Glamorous, opinionated, and always camera‑ready." },
+      foodie:  { name: "The Foodie",     emoji: "🍣", desc: "Snack-driven, cuddly, and strategically cute at mealtime." },
+      funy:   { name: "The Funny Cat",   emoji: "😂", desc: "Always up for a laugh, with a knack for silly antics." },
+    };
+
+    // 2) Questions. Each option gives points via scores: {catKey: points}
+    // You can weight answers by using values > 1 or split points across cats.
+    const QUESTIONS = [
+      {
+        id: "q1",
+        text: "Your ideal weekend?",
+        options: [
+          { label: "Sunbeam nap + cozy blanket", scores: { nap: 1 } },
+          { label: "Exploring a new trail or neighborhood", scores: { explorer: 1 } },
+          { label: "Photoshoot and strutting in style", scores: { diva: 1 } },
+          { label: "Brunch, snacks… and second snacks", scores: { foodie: 1 } },
+          { label: "Watching funny videos all day", scores: { funy: 1 } }        
+        ]
+      },
+      {
+        id: "q2",
+        text: "Pick a snack:",
+        options: [
+          { label: "Warm croissant (flaky goodness)", scores: { foodie: 1 } },
+          { label: "Sparkling water with lemon", scores: { explorer: 1 } },
+          { label: "Velvet cupcake with gold sprinkles", scores: { diva: 1 } },
+          { label: "Milk and cookies before a nap", scores: { nap: 1 } },
+          { label: "TOONAED gutars", scores: { funy: 1 } }
+        
+        ]
+      },
+      {
+        id: "q3",
+        text: "Favorite toy energy?",
+        options: [
+          { label: "Laser pointer (zoom, zoom)", scores: { explorer: 1 } },
+          { label: "Feather wand (dramatic swats)", scores: { diva: 1 } },
+          { label: "Crinkly treat bag (mmm)", scores: { foodie: 1 } },
+          { label: "Cardboard box (instant bed)", scores: { nap: 1 } },
+          { label: "yarn ball (hilarious chaos)", scores: { funy: 1 } }
+        ]
+      },
+      {
+        id: "q4",
+        text: "Pick a nap spot:",
+        options: [
+          { label: "Sunlit windowsill", scores: { nap: 1 } },
+          { label: "Top of the bookshelf", scores: { explorer: 1 } },
+          { label: "Plush velvet throne (obviously)", scores: { diva: 1 } },
+          { label: "Kitchen mat (near the snacks)", scores: { foodie: 1 } },
+          { label: "printer (your but gets printed)", scores: { funy: 1 } }
+        ]
+      },
+      {
+        id: "q5",
+        text: "Your social vibe at a party:",
+        options: [
+          { label: "Find a cozy corner with one good friend", scores: { nap: 1 } },
+          { label: "Meet everyone and explore every room", scores: { explorer: 1 } },
+          { label: "Make an entrance; steal the spotlight", scores: { diva: 1 } },
+          { label: "Hang by the snacks table (strategic)", scores: { foodie: 1 } },
+          { label: "Crack jokes and make everyone laugh bascly the clown", scores: { funy: 1 } }
+        ]
+      },
+      {
+        id: "q6",
+        text: "Morning mood:",
+        options: [
+          { label: "Slow stretch, then snooze again", scores: { nap: 1 } },
+          { label: "Up early and out the door", scores: { explorer: 1 } },
+          { label: "Coffee, outfit, mirror, serve", scores: { diva: 1 } },
+          { label: "Breakfast first, questions later", scores: { foodie: 1 } },
+          { label: "caracking jokes while eating cereal", scores: { funy: 1 } }
+        ]
+      }
+    ];
+
+    // ----- Render the quiz
+    const questionsEl = document.getElementById("questions");
+    const form = document.getElementById("quizForm");
+    const hint = document.getElementById("hint");
+    const result = document.getElementById("result");
+    const resultTitle = document.getElementById("resultTitle");
+    const resultDesc = document.getElementById("resultDesc");
+    const resultBadge = document.getElementById("resultBadge");
+    const resultBar = document.getElementById("resultBar");
+    const tieNote = document.getElementById("tieNote");
+    const breakdown = document.getElementById("scoreBreakdown");
+    const resetBtn = document.getElementById("resetBtn");
+
+    function render() {
+      questionsEl.innerHTML = "";
+      QUESTIONS.forEach((q, idx) => {
+        const fs = document.createElement("fieldset");
+        const lg = document.createElement("legend");
+        lg.textContent = `${idx + 1}. ${q.text}`;
+        fs.appendChild(lg);
+
+        const opts = document.createElement("div");
+        opts.className = "options";
+
+        q.options.forEach((opt, i) => {
+          const id = `${q.id}_${i}`;
+          const label = document.createElement("label");
+          label.className = "opt";
+          label.setAttribute("for", id);
+
+          const input = document.createElement("input");
+          input.type = "radio";
+          input.name = q.id;
+          input.id = id;
+          input.value = String(i);
+          input.required = true;
+
+          const span = document.createElement("span");
+          span.textContent = opt.label;
+
+          label.appendChild(input);
+          label.appendChild(span);
+          opts.appendChild(label);
+        });
+
+        fs.appendChild(opts);
+        questionsEl.appendChild(fs);
+      });
+    }
+    render();
+
+    // ----- Scoring
+    function scoreQuiz() {
+      // initialize scores
+      const scores = Object.fromEntries(Object.keys(CATS).map(k => [k, 0]));
+
+      for (const q of QUESTIONS) {
+        const value = (form.elements[q.id] || {}).value;
+        if (value === undefined || value === "") {
+          return { error: "incomplete" };
+        }
+        const opt = q.options[Number(value)];
+        for (const [cat, pts] of Object.entries(opt.scores)) {
+          scores[cat] = (scores[cat] || 0) + Number(pts || 0);
+        }
+      }
+
+      // find max and ties
+      const max = Math.max(...Object.values(scores));
+      const leaders = Object.keys(scores).filter(k => scores[k] === max);
+
+      // If tie, pick one at random but keep the tie info
+      const picked = leaders[Math.floor(Math.random() * leaders.length)];
+      return { scores, max, leaders, picked };
+    }
+
+    function pct(part, total) {
+      return total === 0 ? 0 : Math.round((part / total) * 100);
+    }
+
+    // ----- Submit + display
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      hint.style.display = "none";
+
+      const resultObj = scoreQuiz();
+      if (resultObj.error === "incomplete") {
+        hint.style.display = "block";
+        result.style.display = "none";
+        return;
+      }
+
+      const { scores, leaders, picked } = resultObj;
+      const totalPoints = Object.values(scores).reduce((a, b) => a + b, 0);
+
+      const cat = CATS[picked];
+      resultTitle.innerHTML = `${cat.emoji} <span class="cat-name">${cat.name}</span>`;
+      resultDesc.textContent = cat.desc;
+      resultBadge.textContent = leaders.length > 1 ? "🎲 Tie-breaker result" : "🎉 Your cat match";
+      resultBar.style.width = pct(scores[picked], totalPoints) + "%";
+      tieNote.textContent = leaders.length > 1
+        ? `It was a tie between: ${leaders.map(k => CATS[k].name).join(", ")}. We picked one at random.`
+        : "";
+
+      // Breakdown
+      const lines = Object.entries(scores)
+        .sort((a,b) => b[1] - a[1])
+        .map(([k, v]) => {
+          const p = pct(v, totalPoints);
+          return `${CATS[k].emoji} ${CATS[k].name}: ${v} point${v===1?"":"s"} (${p}%)`;
+        });
+      breakdown.innerHTML = "<strong>Score breakdown:</strong><br>" + lines.join("<br>");
+
+      result.style.display = "block";
+      result.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+
+    resetBtn.addEventListener("click", () => {
+      form.reset();
+      hint.style.display = "none";
+      result.style.display = "none";
+      resultBar.style.width = "0%";
+      breakdown.innerHTML = "";
+      tieNote.textContent = "";
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  </script>
+</body>
+</html>
